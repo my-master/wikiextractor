@@ -206,18 +206,33 @@ templateKeys = set(['10', '828'])
 
 ##
 # Regex for identifying disambig pages
-filter_disambig_page_pattern = re.compile(
-    "(\(disambiguation\))|([Dd]isambig(uation)?(\|[^}]*)?}})")
+# filter_disambig_page_pattern = re.compile(
+#     "(\(disambiguation\))|([Dd]isambig(uation)?(\|[^}]*)?}})")
+
+# filter_disambig_page_pattern = re.compile(
+#     "\{\{disambiguation\|?(surname|geo|\scleanup)?\}\}")
+
+filter_disambig_page_patterns = [re.compile("\{\{disambiguation(\|surname|\|geo|\scleanup)?\}\}"),
+                                 re.compile("{{(place|human) name disambiguation}}"),
+                                 re.compile("{{(only-two-dabs|for|redirect)}}")]
+
+filter_disambig_title_pattern = re.compile("\(disambiguation\)")
+filter_list_pattern = re.compile("\[\[Category\:Lists of")
 ##
 # page filtering logic -- remove templates, undesired xml namespaces, and disambiguation pages
-def keepPage(ns, page):
+def keepPage(ns, page, title):
     if ns != '0':               # Aritcle
         return False
     # remove disambig pages if desired
     if options.filter_disambig_pages:
+        if filter_disambig_title_pattern.search(title):
+            return False
         for line in page:
-            if filter_disambig_page_pattern.match(line):
+            if filter_list_pattern.search(line):
                 return False
+            for fdp in filter_disambig_page_patterns:
+                if fdp.match(line):
+                    return False
     return True
 
 
@@ -545,12 +560,17 @@ class Extractor(object):
         :param text: the text of the page
         """
         url = get_url(self.id)
+        text_as_string = "\n".join(text)
+        if len(text_as_string.strip()) < 20:
+            return
+        if text_as_string.strip().endswith('refer to:'):
+            return
         if options.write_json:
             json_data = {
                 'id': self.id,
                 'url': url,
                 'title': self.title,
-                'text': "\n".join(text)
+                'text': text_as_string
             }
             if options.print_revision:
                 json_data['revid'] = self.revid
@@ -633,7 +653,7 @@ class Extractor(object):
         
         if sum(len(line) for line in text) < options.min_text_length:
             return
-        
+
         self.write_output(out, text)
         
         errs = (self.template_title_errs,
@@ -2939,7 +2959,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     page_num = 0
     for page_data in pages_from(input):
         id, revid, title, ns, page = page_data
-        if keepPage(ns, page):
+        if keepPage(ns, page, title):
             # slow down
             delay = 0
             if spool_length.value > max_spool_length:
